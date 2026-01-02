@@ -36,7 +36,7 @@ export const tokenRefreshService = {
       }
 
       const { accessToken } = await res.json();
-      localStorage.setItem('likecircle_access_token', accessToken);
+      authService.setAccessToken(accessToken);
       return true;
     } catch (error) {
       console.error('Auto-refresh error:', error);

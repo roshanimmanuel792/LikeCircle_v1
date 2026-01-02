@@ -19,26 +19,40 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
   const [content, setContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!id) return;
-    const c = circleService.getCircleById(id);
-    if (!c) {
-      navigate('/');
-      return;
-    }
-    setCircle(c);
-    
-    const m = circleService.getMembership(user.id, id);
-    if (!m) {
-      navigate('/');
-      return;
-    }
-    setMembership(m);
-    
-    setMessages(circleService.getMessages(id));
+    const load = async () => {
+      try {
+        setLoading(true);
+        const c = await circleService.getCircleById(id);
+        if (!c) {
+          navigate('/');
+          return;
+        }
+        setCircle(c);
+
+        const m = await circleService.getMembership(user.id, id);
+        if (!m) {
+          navigate('/');
+          return;
+        }
+        setMembership(m);
+
+        const msgs = await circleService.getMessages(id);
+        setMessages(msgs);
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message || 'Failed to load circle');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, [id, user.id, navigate]);
 
   const handleSetReply = (msg: Message) => {
@@ -49,7 +63,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || !circle || !membership) return;
 
@@ -59,15 +73,19 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       // We don't force it, but the hierarchy handles the "mentioning" visually
     }
 
-    circleService.postMessage(
-      circle.id,
-      membership.id,
-      membership.alias,
-      finalContent,
-      replyingTo?.id
-    );
-
-    setMessages(circleService.getMessages(circle.id));
+    try {
+      await circleService.postMessage(
+        circle.id,
+        membership.id,
+        membership.alias,
+        finalContent,
+        replyingTo?.id
+      );
+      const msgs = await circleService.getMessages(circle.id);
+      setMessages(msgs);
+    } catch (err: any) {
+      setError(err.message || 'Failed to post');
+    }
     setContent('');
     setReplyingTo(null);
     
@@ -79,6 +97,18 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       }
     }, 100);
   };
+
+  const handleReport = async (messageId: string) => {
+    try {
+      await circleService.reportMessage(messageId);
+    } catch (err: any) {
+      alert(err.message || 'Failed to report');
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen text-[#8d8a85]">Loading...</div>;
+  }
 
   if (!circle || !membership) return null;
 
@@ -142,7 +172,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       <div className="flex-1 overflow-y-auto px-2 py-4 space-y-8 scroll-smooth" ref={scrollRef}>
         {messages.length > 0 ? (
           messages.map(msg => (
-            <Post key={msg.id} message={msg} onReply={handleSetReply} />
+            <Post key={msg.id} message={msg} onReply={handleSetReply} onReport={handleReport} />
           ))
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center p-10 opacity-60">
@@ -158,6 +188,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       {/* Input Area */}
       <div className="shrink-0 pt-4 z-10">
         <div className="relative">
+          {error && <div className="text-red-500 text-xs text-center mb-2">{error}</div>}
           {replyingTo && (
             <div className="absolute bottom-full left-0 right-0 mb-[-1.5rem] pb-[1.5rem] animate-in slide-in-from-bottom-4 duration-300">
               <div className="glass mx-6 py-2 px-6 rounded-t-3xl border-b-0 flex items-center justify-between shadow-lg shadow-black/5 bg-[#faedcd]/80 backdrop-blur-xl">

@@ -22,6 +22,17 @@ const genAlias = () => {
   return `${adj}_${noun}_${num}`;
 };
 
+const mapCircle = (c) => ({
+  id: String(c.id),
+  name: c.name,
+  description: c.description,
+  type: c.type || (c.is_private ? 'private' : 'public'),
+  isPrivate: c.is_private,
+  createdBy: c.created_by,
+  createdAt: new Date(c.created_at).getTime(),
+  memberCount: Number(c.member_count) || 0,
+});
+
 const signAccess = (user) => jwt.sign({ sub: user.id, email: user.email, name: user.name }, APP_JWT_SECRET, { expiresIn: ACCESS_TTL });
 const signRefresh = (user) => jwt.sign({ sub: user.id }, APP_REFRESH_SECRET, { expiresIn: REFRESH_TTL });
 
@@ -154,20 +165,34 @@ app.get('/api/circles', authMiddleware, async (_req, res) => {
       GROUP BY c.id
       ORDER BY c.created_at DESC;
     `);
-    const circles = result.rows.map((c) => ({
-      id: String(c.id),
-      name: c.name,
-      description: c.description,
-      type: c.type || (c.is_private ? 'private' : 'public'),
-      isPrivate: c.is_private,
-      createdBy: c.created_by,
-      createdAt: new Date(c.created_at).getTime(),
-      memberCount: Number(c.member_count) || 0,
-    }));
+    const circles = result.rows.map(mapCircle);
     res.json({ circles });
   } catch (error) {
     console.error('List circles failed', error);
     res.status(500).json({ message: 'Failed to list circles' });
+  }
+});
+
+// Circles: detail
+app.get('/api/circles/:id', authMiddleware, async (req, res) => {
+  try {
+    const circleId = Number(req.params.id);
+    if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
+
+    const result = await pool.query(
+      `SELECT c.id, c.name, c.description, c.type, c.is_private, c.created_by, c.created_at, COALESCE(COUNT(m.id),0) AS member_count
+       FROM circles c
+       LEFT JOIN memberships m ON m.circle_id = c.id
+       WHERE c.id = $1
+       GROUP BY c.id`,
+      [circleId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Circle not found' });
+    res.json({ circle: mapCircle(result.rows[0]) });
+  } catch (error) {
+    console.error('Get circle failed', error);
+    res.status(500).json({ message: 'Failed to fetch circle' });
   }
 });
 
@@ -244,6 +269,26 @@ app.post('/api/circles/:id/join', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Join circle failed', error);
     res.status(500).json({ message: 'Failed to join circle' });
+  }
+});
+
+// Circles: get membership for current user
+app.get('/api/circles/:id/membership', authMiddleware, async (req, res) => {
+  try {
+    const circleId = Number(req.params.id);
+    if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
+
+    const userRow = await getDbUserBySub(req.user.sub);
+    if (!userRow) return res.status(401).json({ message: 'User not found' });
+
+    const membershipRes = await pool.query('SELECT * FROM memberships WHERE user_id = $1 AND circle_id = $2', [userRow.id, circleId]);
+    if (membershipRes.rows.length === 0) return res.status(404).json({ message: 'Not a member' });
+
+    const m = membershipRes.rows[0];
+    res.json({ membership: { id: String(m.id), userId: String(userRow.id), circleId: String(circleId), alias: m.alias, joinedAt: new Date(m.joined_at).getTime() } });
+  } catch (error) {
+    console.error('Get membership failed', error);
+    res.status(500).json({ message: 'Failed to fetch membership' });
   }
 });
 

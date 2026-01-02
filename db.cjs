@@ -79,7 +79,7 @@ const initDb = async () => {
 
     // Ensure newer columns exist if tables were created earlier
     await pool.query("ALTER TABLE circles ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'public';");
-    await pool.query("ALTER TABLE memberships ADD CONSTRAINT IF NOT EXISTS unique_user_circle UNIQUE (user_id, circle_id);");
+    await pool.query("ALTER TABLE memberships ADD CONSTRAINT unique_user_circle UNIQUE (user_id, circle_id);").catch(() => {});
     await pool.query("ALTER TABLE messages ADD COLUMN IF NOT EXISTS alias VARCHAR(255);");
     await pool.query("ALTER TABLE messages ADD COLUMN IF NOT EXISTS membership_id INTEGER REFERENCES memberships(id) ON DELETE SET NULL;");
     await pool.query("ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;");

@@ -17,25 +17,41 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
   const [showJoinPrivate, setShowJoinPrivate] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setCircles(circleService.getCircles());
+    const load = async () => {
+      try {
+        setLoading(true);
+        const data = await circleService.getCircles();
+        setCircles(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
-  const handleJoin = (circle: Circle) => {
+  const handleJoin = async (circle: Circle) => {
     if (circle.type === CircleType.PUBLIC) {
-      circleService.joinCircle(user.id, circle.id);
-      navigate(`/circle/${circle.id}`);
+      try {
+        await circleService.joinCircle(user.id, circle.id);
+        navigate(`/circle/${circle.id}`);
+      } catch (err: any) {
+        setError(err.message || 'Failed to join');
+      }
     } else {
       setShowJoinPrivate(circle.id);
       setError('');
     }
   };
 
-  const submitJoinPrivate = () => {
+  const submitJoinPrivate = async () => {
     if (!showJoinPrivate) return;
     try {
-      circleService.joinCircle(user.id, showJoinPrivate, password);
+      await circleService.joinCircle(user.id, showJoinPrivate, password);
       navigate(`/circle/${showJoinPrivate}`);
     } catch (err: any) {
       setError(err.message);
@@ -74,7 +90,9 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
 
       {/* Circle Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {circles.length > 0 ? (
+        {loading ? (
+          <div className="col-span-full text-center py-12 text-[#8d8a85]">Loading circles...</div>
+        ) : circles.length > 0 ? (
           circles.map((circle) => (
             <div 
               key={circle.id}

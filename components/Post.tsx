@@ -5,17 +5,20 @@ import { Message } from '../types';
 interface Props {
   message: Message;
   onReply: (message: Message) => void;
+  onReport?: (messageId: string) => Promise<void> | void;
   isReply?: boolean;
   depth?: number;
 }
 
-const Post: React.FC<Props> = ({ message, onReply, isReply = false, depth = 0 }) => {
+const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, depth = 0 }) => {
   const [reported, setReported] = useState(false);
   const date = new Date(message.timestamp);
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const handleReport = () => {
+  const handleReport = async () => {
+    if (!onReport) return;
     if (confirm('Are you sure you want to report this message?')) {
+      await onReport(message.id);
       setReported(true);
     }
   };

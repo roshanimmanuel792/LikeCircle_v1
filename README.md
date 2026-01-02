@@ -11,3 +11,7 @@ PostgresSql SChema
 yet to do :
 CRUD API's 
 Messaging structure and some more cool stuff
+
+updates:
+CRUD Is done 
+and fixed chat style

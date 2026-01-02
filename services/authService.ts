@@ -60,6 +60,9 @@ export const authService = {
   getAccessToken: (): string | null => localStorage.getItem(ACCESS_KEY),
   getRefreshToken: (): string | null => localStorage.getItem(REFRESH_KEY),
 
+  setAccessToken: (token: string) => localStorage.setItem(ACCESS_KEY, token),
+  setRefreshToken: (token: string) => localStorage.setItem(REFRESH_KEY, token),
+
   logout: () => {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(TOKEN_KEY);

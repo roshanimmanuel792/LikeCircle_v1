@@ -14,12 +14,22 @@ const CreateCircleModal: React.FC<Props> = ({ onClose, onCreated, userId }) => {
   const [description, setDescription] = useState('');
   const [type, setType] = useState<CircleType>(CircleType.PUBLIC);
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !description) return;
-    const circle = circleService.createCircle(name, description, type, password, userId);
-    onCreated(circle);
+    try {
+      setLoading(true);
+      setError('');
+      const circle = await circleService.createCircle(name, description, type, password);
+      onCreated(circle);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create circle');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -99,11 +109,14 @@ const CreateCircleModal: React.FC<Props> = ({ onClose, onCreated, userId }) => {
             </div>
           )}
 
+          {error && <p className="text-red-500 text-xs font-medium text-center">{error}</p>}
+
           <button
             type="submit"
-            className="w-full py-4 bg-gradient-to-r from-[#d4a373] to-[#a98467] rounded-2xl font-bold text-lg text-white shadow-lg shadow-[#d4a373]/30 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4"
+            disabled={loading}
+            className="w-full py-4 bg-gradient-to-r from-[#d4a373] to-[#a98467] rounded-2xl font-bold text-lg text-white shadow-lg shadow-[#d4a373]/30 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4 disabled:opacity-60"
           >
-            Launch Circle
+            {loading ? 'Creating...' : 'Launch Circle'}
           </button>
         </form>
       </div>
