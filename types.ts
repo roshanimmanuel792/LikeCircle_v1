@@ -35,6 +35,7 @@ export interface Message {
   circleId: string;
   membershipId: string;
   alias: string; // Denormalized for quick display
+  avatar?: string; // User's profile picture
   content: string;
   parentId?: string; // For nesting
   timestamp: number;

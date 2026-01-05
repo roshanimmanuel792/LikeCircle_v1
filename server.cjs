@@ -438,9 +438,11 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
     if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
 
     const result = await pool.query(
-      `SELECT id, circle_id, membership_id, alias, content, parent_message_id, created_at
-       FROM messages WHERE circle_id = $1 AND is_deleted = FALSE
-       ORDER BY created_at DESC`,
+      `SELECT m.id, m.circle_id, m.membership_id, m.alias, m.content, m.parent_message_id, m.created_at, u.avatar
+       FROM messages m
+       LEFT JOIN users u ON u.id = m.user_id
+       WHERE m.circle_id = $1 AND m.is_deleted = FALSE
+       ORDER BY m.created_at DESC`,
       [circleId]
     );
 
@@ -449,6 +451,7 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
       circleId: String(m.circle_id),
       membershipId: m.membership_id ? String(m.membership_id) : '',
       alias: m.alias || 'Anon',
+      avatar: m.avatar || undefined,
       content: m.content,
       parentId: m.parent_message_id ? String(m.parent_message_id) : undefined,
       timestamp: new Date(m.created_at).getTime(),

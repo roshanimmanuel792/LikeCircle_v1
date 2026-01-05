@@ -49,8 +49,12 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, de
         <div className={`glass-hover bg-white/40 p-6 rounded-[2rem] border border-white/60 group transition-all shadow-sm hover:shadow-md ${isReply ? 'border-l-4 border-l-[#d4a373]/40' : ''}`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#d4a373] to-[#a98467] flex items-center justify-center text-xs font-black text-white uppercase shadow-md shadow-[#d4a373]/10">
-                {message.alias.substring(0, 2)}
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#d4a373] to-[#a98467] flex items-center justify-center text-xs font-black text-white uppercase shadow-md shadow-[#d4a373]/10 overflow-hidden">
+                {message.avatar ? (
+                  <img src={message.avatar} alt={message.alias} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{message.alias.substring(0, 2)}</span>
+                )}
               </div>
               <div className="flex flex-col">
                 <span className="text-[#d4a373] font-black text-sm tracking-wide">@{message.alias}</span>

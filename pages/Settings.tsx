@@ -39,7 +39,8 @@ const Settings: React.FC<Props> = ({ user, onLogout }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [circles, setCircles] = useState<UserCircle[]>([]);
   const [messages, setMessages] = useState<UserMessage[]>([]);
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'circles' | 'messages'>('profile');
@@ -57,7 +58,7 @@ const Settings: React.FC<Props> = ({ user, onLogout }) => {
         setProfile(profileRes);
         setCircles(circlesRes.circles || []);
         setMessages(messagesRes.messages || []);
-        setAvatarUrl(profileRes.avatar || '');
+        setPreviewUrl(profileRes.avatar || '');
       } catch (err) {
         console.error('Failed to load settings data', err);
       } finally {
@@ -67,16 +68,45 @@ const Settings: React.FC<Props> = ({ user, onLogout }) => {
     loadData();
   }, []);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image size should be less than 5MB');
+      return;
+    }
+
+    setSelectedFile(file);
+
+    // Create preview URL
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleUpdateAvatar = async () => {
-    if (!avatarUrl.trim()) return;
+    if (!selectedFile && !previewUrl) return;
     
     try {
       setUpdating(true);
-      await apiClient.put('/api/me/profile', { avatar: avatarUrl });
+      
+      // Use previewUrl which is already base64 from FileReader
+      await apiClient.put('/api/me/profile', { avatar: previewUrl });
       if (profile) {
-        setProfile({ ...profile, avatar: avatarUrl });
+        setProfile({ ...profile, avatar: previewUrl });
       }
-      alert('Profile picture updated!');
+      setSelectedFile(null);
+      alert('Profile picture updated successfully!');
     } catch (err) {
       console.error('Failed to update avatar', err);
       alert('Failed to update profile picture');
@@ -199,23 +229,44 @@ const Settings: React.FC<Props> = ({ user, onLogout }) => {
 
                 <div className="pt-4 border-t border-[#d4a373]/20">
                   <label className="block text-sm font-medium text-[#432818]/60 mb-2">
-                    Update Profile Picture (URL)
+                    Update Profile Picture
                   </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={avatarUrl}
-                      onChange={(e) => setAvatarUrl(e.target.value)}
-                      placeholder="Enter image URL"
-                      className="flex-1 px-4 py-2 bg-white/60 border border-[#d4a373]/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d4a373]/50"
-                    />
-                    <button
-                      onClick={handleUpdateAvatar}
-                      disabled={updating || !avatarUrl.trim()}
-                      className="px-6 py-2 bg-[#d4a373] text-white rounded-lg hover:bg-[#c89563] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                      {updating ? 'Updating...' : 'Update'}
-                    </button>
+                  
+                  {/* Preview */}
+                  {previewUrl && (
+                    <div className="mb-4">
+                      <div className="w-24 h-24 rounded-full overflow-hidden bg-[#d4a373]/10 mx-auto">
+                        <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      <div className="px-4 py-2 bg-white/60 border border-[#d4a373]/20 rounded-lg text-center hover:bg-white/80 transition-all">
+                        {selectedFile ? selectedFile.name : 'Choose Image from Device'}
+                      </div>
+                    </label>
+                    
+                    {selectedFile && (
+                      <button
+                        onClick={handleUpdateAvatar}
+                        disabled={updating}
+                        className="px-6 py-2 bg-[#d4a373] text-white rounded-lg hover:bg-[#c89563] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {updating ? 'Uploading...' : 'Upload Picture'}
+                      </button>
+                    )}
+                    
+                    <p className="text-xs text-[#432818]/60 text-center">
+                      Max size: 5MB • Formats: JPG, PNG, GIF, WebP
+                    </p>
                   </div>
                 </div>
               </div>
