@@ -45,7 +45,7 @@ app.use(express.json());
 // Helpers
 const getDbUserBySub = async (googleSub) => {
   const result = await pool.query(
-    'SELECT id, google_sub, email, name, avatar FROM users WHERE google_sub = $1',
+    'SELECT id, google_sub, email, name, avatar, alias FROM users WHERE google_sub = $1',
     [googleSub]
   );
   return result.rows[0];
@@ -65,15 +65,38 @@ app.post('/auth/google', async (req, res) => {
     const payload = ticket.getPayload();
     if (!payload) return res.status(401).json({ message: 'Invalid token payload' });
 
-    const result = await pool.query(
-      `INSERT INTO users (google_sub, email, name, avatar)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (google_sub) DO UPDATE SET email=$2, name=$3, avatar=$4, updated_at=CURRENT_TIMESTAMP
-       RETURNING id, google_sub, email, name, avatar`,
-      [payload.sub, payload.email, payload.name, payload.picture]
+    // Check if user exists
+    let userResult = await pool.query(
+      'SELECT id, google_sub, email, name, avatar, alias FROM users WHERE google_sub = $1',
+      [payload.sub]
     );
 
-    const dbUser = result.rows[0];
+    let dbUser;
+    if (userResult.rows.length === 0) {
+      // New user - generate alias
+      const alias = genAlias();
+      const insertResult = await pool.query(
+        `INSERT INTO users (google_sub, email, name, avatar, alias)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, google_sub, email, name, avatar, alias`,
+        [payload.sub, payload.email, payload.name, payload.picture, alias]
+      );
+      dbUser = insertResult.rows[0];
+    } else {
+      // Existing user - update info but keep alias
+      dbUser = userResult.rows[0];
+      if (!dbUser.alias) {
+        // Backfill alias for old users
+        const alias = genAlias();
+        await pool.query('UPDATE users SET alias = $1 WHERE id = $2', [alias, dbUser.id]);
+        dbUser.alias = alias;
+      }
+      await pool.query(
+        'UPDATE users SET email=$1, name=$2, avatar=$3, updated_at=CURRENT_TIMESTAMP WHERE id=$4',
+        [payload.email, payload.name, payload.picture, dbUser.id]
+      );
+    }
+
     const user = { id: dbUser.google_sub, email: dbUser.email, name: dbUser.name, avatar: dbUser.avatar };
 
     const accessToken = signAccess(user);
@@ -257,12 +280,11 @@ app.post('/api/circles/:id/join', authMiddleware, async (req, res) => {
       return res.json({ membership: { id: String(m.id), userId: String(userRow.id), circleId: String(circleId), alias: m.alias, joinedAt: new Date(m.joined_at).getTime() } });
     }
 
-    const alias = genAlias();
     const insert = await pool.query(
       `INSERT INTO memberships (user_id, circle_id, alias)
        VALUES ($1, $2, $3)
        RETURNING id, alias, joined_at`,
-      [userRow.id, circleId, alias]
+      [userRow.id, circleId, userRow.alias]
     );
     const m = insert.rows[0];
     res.status(201).json({ membership: { id: String(m.id), userId: String(userRow.id), circleId: String(circleId), alias: m.alias, joinedAt: new Date(m.joined_at).getTime() } });

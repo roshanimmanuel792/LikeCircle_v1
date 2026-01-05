@@ -15,3 +15,6 @@ Messaging structure and some more cool stuff
 updates:
 CRUD Is done 
 and fixed chat style
+next commits
+and next up is auth issue solving and a personalized profile
+and report issues or flag them and some preventivee measures 

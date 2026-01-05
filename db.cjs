@@ -20,6 +20,7 @@ const initDb = async () => {
         email VARCHAR(255) NOT NULL,
         name VARCHAR(255),
         avatar TEXT,
+        alias VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -78,6 +79,7 @@ const initDb = async () => {
     `);
 
     // Ensure newer columns exist if tables were created earlier
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(255);");
     await pool.query("ALTER TABLE circles ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'public';");
     await pool.query("ALTER TABLE memberships ADD CONSTRAINT unique_user_circle UNIQUE (user_id, circle_id);").catch(() => {});
     await pool.query("ALTER TABLE messages ADD COLUMN IF NOT EXISTS alias VARCHAR(255);");
