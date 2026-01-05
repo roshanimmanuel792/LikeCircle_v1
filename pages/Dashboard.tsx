@@ -76,6 +76,16 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
             </svg>
             Create Circle
           </button>
+          <button
+            onClick={() => navigate('/discover')}
+            className="px-6 py-3 bg-[#c9a96e] hover:bg-[#a98467] text-white rounded-xl font-semibold transition-all flex items-center gap-2 shadow-lg shadow-[#c9a96e]/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9 9a2 2 0 104 0 2 2 0 00-4 0z" />
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
+            </svg>
+            Explore Circles
+          </button>
           <div className="flex gap-2">
             <button
               onClick={() => navigate('/settings')}

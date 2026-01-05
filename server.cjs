@@ -298,20 +298,56 @@ app.get('/api/me/messages', authMiddleware, async (req, res) => {
 });
 
 // Circles: list
-app.get('/api/circles', authMiddleware, async (_req, res) => {
+app.get('/api/circles', authMiddleware, async (req, res) => {
   try {
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+
+    // Get only circles created by user OR where user is a member
     const result = await pool.query(`
-      SELECT c.id, c.name, c.description, c.type, c.is_private, c.created_by, c.created_at, COALESCE(COUNT(m.id),0) AS member_count
+      SELECT DISTINCT c.id, c.name, c.description, c.type, c.is_private, c.created_by, c.created_at, COALESCE(COUNT(m.id),0) AS member_count
       FROM circles c
       LEFT JOIN memberships m ON m.circle_id = c.id
+      WHERE c.created_by = $1 OR EXISTS (
+        SELECT 1 FROM memberships WHERE user_id = $1 AND circle_id = c.id
+      )
       GROUP BY c.id
       ORDER BY c.created_at DESC;
-    `);
+    `, [dbUser.id]);
     const circles = result.rows.map(mapCircle);
     res.json({ circles });
   } catch (error) {
     console.error('List circles failed', error);
     res.status(500).json({ message: 'Failed to list circles' });
+  }
+});
+
+// Circles: discover (public circles for non-members)
+app.get('/api/circles/discover', authMiddleware, async (req, res) => {
+  try {
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+
+    const search = req.query.search ? `%${req.query.search}%` : '%';
+
+    // Get all public circles that user hasn't joined yet
+    const result = await pool.query(`
+      SELECT c.id, c.name, c.description, c.type, c.is_private, c.created_by, c.created_at, COALESCE(COUNT(m.id),0) AS member_count
+      FROM circles c
+      LEFT JOIN memberships m ON m.circle_id = c.id
+      WHERE c.is_private = FALSE 
+        AND (c.name ILIKE $1 OR c.description ILIKE $1)
+        AND NOT EXISTS (
+          SELECT 1 FROM memberships WHERE user_id = $2 AND circle_id = c.id
+        )
+      GROUP BY c.id
+      ORDER BY c.created_at DESC;
+    `, [search, dbUser.id]);
+    const circles = result.rows.map(mapCircle);
+    res.json({ circles });
+  } catch (error) {
+    console.error('Discover circles failed', error);
+    res.status(500).json({ message: 'Failed to discover circles' });
   }
 });
 

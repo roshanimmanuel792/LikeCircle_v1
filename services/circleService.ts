@@ -25,6 +25,12 @@ export const circleService = {
     return circles;
   },
 
+  discoverCircles: async (search?: string): Promise<Circle[]> => {
+    const path = search ? `/api/circles/discover?search=${encodeURIComponent(search)}` : '/api/circles/discover';
+    const { circles } = await apiClient.get(path);
+    return circles;
+  },
+
   getCircleById: async (id: string): Promise<Circle | null> => {
     const res = await apiClient.get(`/api/circles/${id}`);
     return res.circle ?? null;

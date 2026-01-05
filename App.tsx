@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CircleView from './pages/CircleView';
 import Settings from './pages/Settings';
+import Discover from './pages/Discover';
 import Metaballs from './components/Metaballs';
 import { authService } from './services/authService';
 import { User } from './types';
@@ -64,6 +65,10 @@ const App: React.FC = () => {
             <Route 
               path="/settings" 
               element={user ? <Settings user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
+            />
+            <Route 
+              path="/discover" 
+              element={user ? <Discover user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
             />
           </Routes>
         </div>
