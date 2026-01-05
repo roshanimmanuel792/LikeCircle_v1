@@ -38,4 +38,5 @@ async function doFetch(path: string, options: RequestInit = {}, allowRetry = tru
 export const apiClient = {
   get: (path: string) => doFetch(path, { method: 'GET' }),
   post: (path: string, body?: any) => doFetch(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+  put: (path: string, body?: any) => doFetch(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
 };

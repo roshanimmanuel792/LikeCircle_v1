@@ -5,6 +5,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CircleView from './pages/CircleView';
+import Settings from './pages/Settings';
 import Metaballs from './components/Metaballs';
 import { authService } from './services/authService';
 import { User } from './types';
@@ -59,6 +60,10 @@ const App: React.FC = () => {
             <Route 
               path="/circle/:id" 
               element={user ? <CircleView user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
+            />
+            <Route 
+              path="/settings" 
+              element={user ? <Settings user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
             />
           </Routes>
         </div>

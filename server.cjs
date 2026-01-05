@@ -18,8 +18,27 @@ const NOUNS = ['Lion','Fox','Owl','Wolf','Hawk','Otter','Panda','Falcon','Dolphi
 const genAlias = () => {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
   const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  const num = Math.floor(Math.random() * 900 + 100); // 3-digit suffix
-  return `${adj}_${noun}_${num}`;
+  const num = Math.floor(Math.random() * 9000 + 1000); // 4-digit number (1000-9999)
+  return `${adj}${noun}${num}`;
+};
+
+// Generate unique alias with collision checking
+const genUniqueAlias = async () => {
+  let attempts = 0;
+  const maxAttempts = 100;
+  
+  while (attempts < maxAttempts) {
+    const alias = genAlias();
+    const existing = await pool.query('SELECT id FROM users WHERE alias = $1', [alias]);
+    
+    if (existing.rows.length === 0) {
+      return alias; // Unique alias found
+    }
+    attempts++;
+  }
+  
+  // Fallback: add timestamp if still can't find unique after 100 tries
+  return `${genAlias()}_${Date.now()}`;
 };
 
 const mapCircle = (c) => ({
@@ -73,8 +92,8 @@ app.post('/auth/google', async (req, res) => {
 
     let dbUser;
     if (userResult.rows.length === 0) {
-      // New user - generate alias
-      const alias = genAlias();
+      // New user - generate unique alias
+      const alias = await genUniqueAlias();
       const insertResult = await pool.query(
         `INSERT INTO users (google_sub, email, name, avatar, alias)
          VALUES ($1, $2, $3, $4, $5)
@@ -87,7 +106,7 @@ app.post('/auth/google', async (req, res) => {
       dbUser = userResult.rows[0];
       if (!dbUser.alias) {
         // Backfill alias for old users
-        const alias = genAlias();
+        const alias = await genUniqueAlias();
         await pool.query('UPDATE users SET alias = $1 WHERE id = $2', [alias, dbUser.id]);
         dbUser.alias = alias;
       }
@@ -176,6 +195,104 @@ app.post('/auth/logout', authMiddleware, async (req, res) => {
 // Protected: current user
 app.get('/api/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
+});
+
+// User profile: get full details
+app.get('/api/me/profile', authMiddleware, async (req, res) => {
+  try {
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+    
+    res.json({
+      id: dbUser.google_sub,
+      email: dbUser.email,
+      name: dbUser.name,
+      avatar: dbUser.avatar,
+      alias: dbUser.alias,
+    });
+  } catch (error) {
+    console.error('Get profile failed', error);
+    res.status(500).json({ message: 'Failed to get profile' });
+  }
+});
+
+// User profile: update avatar
+app.put('/api/me/profile', authMiddleware, async (req, res) => {
+  try {
+    const { avatar } = req.body;
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+    
+    await pool.query(
+      'UPDATE users SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [avatar, dbUser.id]
+    );
+    
+    res.json({ message: 'Profile updated', avatar });
+  } catch (error) {
+    console.error('Update profile failed', error);
+    res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+// Get user's circles
+app.get('/api/me/circles', authMiddleware, async (req, res) => {
+  try {
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+    
+    const result = await pool.query(`
+      SELECT c.id, c.name, c.description, c.type, c.is_private, c.created_at, m.joined_at
+      FROM memberships m
+      JOIN circles c ON c.id = m.circle_id
+      WHERE m.user_id = $1
+      ORDER BY m.joined_at DESC
+    `, [dbUser.id]);
+    
+    const circles = result.rows.map(row => ({
+      ...mapCircle(row),
+      joinedAt: new Date(row.joined_at).getTime(),
+    }));
+    
+    res.json({ circles });
+  } catch (error) {
+    console.error('Get user circles failed', error);
+    res.status(500).json({ message: 'Failed to get circles' });
+  }
+});
+
+// Get user's messages
+app.get('/api/me/messages', authMiddleware, async (req, res) => {
+  try {
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(404).json({ message: 'User not found' });
+    
+    const result = await pool.query(`
+      SELECT 
+        msg.id, msg.content, msg.created_at, msg.circle_id,
+        c.name as circle_name,
+        msg.alias
+      FROM messages msg
+      JOIN circles c ON c.id = msg.circle_id
+      WHERE msg.user_id = $1 AND msg.is_deleted = false
+      ORDER BY msg.created_at DESC
+      LIMIT 100
+    `, [dbUser.id]);
+    
+    const messages = result.rows.map(row => ({
+      id: String(row.id),
+      content: row.content,
+      createdAt: new Date(row.created_at).getTime(),
+      circleId: String(row.circle_id),
+      circleName: row.circle_name,
+      alias: row.alias,
+    }));
+    
+    res.json({ messages });
+  } catch (error) {
+    console.error('Get user messages failed', error);
+    res.status(500).json({ message: 'Failed to get messages' });
+  }
 });
 
 // Circles: list
