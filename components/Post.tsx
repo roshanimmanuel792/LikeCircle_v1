@@ -6,14 +6,19 @@ interface Props {
   message: Message;
   onReply: (message: Message) => void;
   onReport?: (messageId: string) => Promise<void> | void;
+  onDelete?: (messageId: string) => Promise<void> | void;
+  currentUserId?: string; // Database user ID for ownership check
   isReply?: boolean;
   depth?: number;
 }
 
-const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, depth = 0 }) => {
+const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUserId, isReply = false, depth = 0 }) => {
   const [reported, setReported] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const date = new Date(message.timestamp);
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  const isOwner = currentUserId && message.userId && currentUserId === message.userId;
 
   const handleReport = async () => {
     if (!onReport) return;
@@ -23,10 +28,31 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, de
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (confirm('Delete this message? It will disappear for everyone.')) {
+      try {
+        await onDelete(message.id);
+        setDeleted(true);
+      } catch (err) {
+        console.error('Failed to delete message', err);
+        alert('Failed to delete message');
+      }
+    }
+  };
+
   if (reported) {
     return (
       <div className={`p-4 glass rounded-[2rem] text-center text-xs text-[#8d8a85] font-medium italic ${isReply ? 'ml-6 md:ml-12' : ''} my-2`}>
         This content was reported and is hidden.
+      </div>
+    );
+  }
+
+  if (deleted) {
+    return (
+      <div className={`p-4 glass rounded-[2rem] text-center text-xs text-[#8d8a85] font-medium italic ${isReply ? 'ml-6 md:ml-12' : ''} my-2`}>
+        This message was deleted.
       </div>
     );
   }
@@ -69,6 +95,17 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, de
               >
                 Reply Mention
               </button>
+              {isOwner && (
+                <button 
+                  onClick={handleDelete}
+                  className="p-2 text-[#8d8a85] hover:text-orange-500 rounded-full hover:bg-orange-50 transition-all"
+                  title="Delete Message"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
               <button 
                 onClick={handleReport}
                 className="p-2 text-[#8d8a85] hover:text-red-500 rounded-full hover:bg-red-50 transition-all"
@@ -96,6 +133,9 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, isReply = false, de
                 key={reply.id} 
                 message={reply} 
                 onReply={onReply} 
+                onReport={onReport}
+                onDelete={onDelete}
+                currentUserId={currentUserId}
                 isReply 
                 depth={depth + 1} 
               />

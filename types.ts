@@ -36,6 +36,7 @@ export interface Message {
   membershipId: string;
   alias: string; // Denormalized for quick display
   avatar?: string; // User's profile picture
+  userId?: string; // User ID for ownership check
   content: string;
   parentId?: string; // For nesting
   timestamp: number;

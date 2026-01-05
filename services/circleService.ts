@@ -62,5 +62,9 @@ export const circleService = {
 
   reportMessage: async (messageId: string): Promise<void> => {
     await apiClient.post(`/api/messages/${messageId}/report`);
+  },
+
+  deleteMessage: async (messageId: string): Promise<void> => {
+    await apiClient.delete(`/api/messages/${messageId}`);
   }
 };

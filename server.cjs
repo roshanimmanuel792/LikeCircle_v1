@@ -205,6 +205,7 @@ app.get('/api/me/profile', authMiddleware, async (req, res) => {
     
     res.json({
       id: dbUser.google_sub,
+      databaseId: String(dbUser.id), // Add database ID for internal use
       email: dbUser.email,
       name: dbUser.name,
       avatar: dbUser.avatar,
@@ -269,12 +270,12 @@ app.get('/api/me/messages', authMiddleware, async (req, res) => {
     
     const result = await pool.query(`
       SELECT 
-        msg.id, msg.content, msg.created_at, msg.circle_id,
+        msg.id, msg.content, msg.created_at, msg.circle_id, msg.is_deleted,
         c.name as circle_name,
         msg.alias
       FROM messages msg
       JOIN circles c ON c.id = msg.circle_id
-      WHERE msg.user_id = $1 AND msg.is_deleted = false
+      WHERE msg.user_id = $1
       ORDER BY msg.created_at DESC
       LIMIT 100
     `, [dbUser.id]);
@@ -286,6 +287,7 @@ app.get('/api/me/messages', authMiddleware, async (req, res) => {
       circleId: String(row.circle_id),
       circleName: row.circle_name,
       alias: row.alias,
+      isDeleted: row.is_deleted,
     }));
     
     res.json({ messages });
@@ -438,7 +440,7 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
     if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
 
     const result = await pool.query(
-      `SELECT m.id, m.circle_id, m.membership_id, m.alias, m.content, m.parent_message_id, m.created_at, u.avatar
+      `SELECT m.id, m.circle_id, m.membership_id, m.alias, m.content, m.parent_message_id, m.created_at, m.user_id, u.avatar
        FROM messages m
        LEFT JOIN users u ON u.id = m.user_id
        WHERE m.circle_id = $1 AND m.is_deleted = FALSE
@@ -452,6 +454,7 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
       membershipId: m.membership_id ? String(m.membership_id) : '',
       alias: m.alias || 'Anon',
       avatar: m.avatar || undefined,
+      userId: m.user_id ? String(m.user_id) : undefined,
       content: m.content,
       parentId: m.parent_message_id ? String(m.parent_message_id) : undefined,
       timestamp: new Date(m.created_at).getTime(),
@@ -501,6 +504,34 @@ app.post('/api/circles/:id/messages', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Post message failed', error);
     res.status(500).json({ message: 'Failed to post message' });
+  }
+});
+
+// Messages: delete
+app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
+  try {
+    const msgId = Number(req.params.id);
+    if (Number.isNaN(msgId)) return res.status(400).json({ message: 'Invalid message id' });
+    
+    // Get message to check ownership
+    const msgRow = await pool.query('SELECT user_id FROM messages WHERE id = $1', [msgId]);
+    if (msgRow.rows.length === 0) return res.status(404).json({ message: 'Message not found' });
+    
+    // Get current user
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(401).json({ message: 'User not found' });
+    
+    // Only allow deletion by message author
+    if (msgRow.rows[0].user_id !== dbUser.id) {
+      return res.status(403).json({ message: 'You can only delete your own messages' });
+    }
+    
+    // Mark as deleted
+    await pool.query('UPDATE messages SET is_deleted = TRUE WHERE id = $1', [msgId]);
+    res.json({ message: 'Message deleted' });
+  } catch (error) {
+    console.error('Delete message failed', error);
+    res.status(500).json({ message: 'Failed to delete message' });
   }
 });
 

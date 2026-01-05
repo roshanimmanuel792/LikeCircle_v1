@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { User, Circle, Message, Membership, CircleType } from '../types';
 import { circleService } from '../services/circleService';
+import { apiClient } from '../services/apiClient';
 import Post from '../components/Post';
 
 interface Props {
@@ -21,6 +22,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
   const [showInfo, setShowInfo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -29,6 +31,11 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     const load = async () => {
       try {
         setLoading(true);
+        
+        // Fetch current user's database ID
+        const profile = await apiClient.get('/api/me/profile');
+        setCurrentUserId(profile.databaseId);
+        
         const c = await circleService.getCircleById(id);
         if (!c) {
           navigate('/');
@@ -106,6 +113,16 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     }
   };
 
+  const handleDelete = async (messageId: string) => {
+    try {
+      await circleService.deleteMessage(messageId);
+      // Remove deleted message from state
+      setMessages(messages.filter(m => m.id !== messageId));
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete message');
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-screen text-[#8d8a85]">Loading...</div>;
   }
@@ -172,7 +189,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       <div className="flex-1 overflow-y-auto px-2 py-4 space-y-8 scroll-smooth" ref={scrollRef}>
         {messages.length > 0 ? (
           messages.map(msg => (
-            <Post key={msg.id} message={msg} onReply={handleSetReply} onReport={handleReport} />
+            <Post key={msg.id} message={msg} onReply={handleSetReply} onReport={handleReport} onDelete={handleDelete} currentUserId={currentUserId || undefined} />
           ))
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center p-10 opacity-60">
