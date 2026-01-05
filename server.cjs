@@ -102,7 +102,7 @@ app.post('/auth/google', async (req, res) => {
       );
       dbUser = insertResult.rows[0];
     } else {
-      // Existing user - update info but keep alias
+      // Existing user - update info but keep alias and custom avatar
       dbUser = userResult.rows[0];
       if (!dbUser.alias) {
         // Backfill alias for old users
@@ -110,9 +110,11 @@ app.post('/auth/google', async (req, res) => {
         await pool.query('UPDATE users SET alias = $1 WHERE id = $2', [alias, dbUser.id]);
         dbUser.alias = alias;
       }
+      // Keep the custom avatar if user has set one, otherwise use Google picture
+      const avatarToUse = dbUser.avatar || payload.picture;
       await pool.query(
         'UPDATE users SET email=$1, name=$2, avatar=$3, updated_at=CURRENT_TIMESTAMP WHERE id=$4',
-        [payload.email, payload.name, payload.picture, dbUser.id]
+        [payload.email, payload.name, avatarToUse, dbUser.id]
       );
     }
 
