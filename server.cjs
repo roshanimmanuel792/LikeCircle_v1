@@ -330,13 +330,12 @@ app.get('/api/circles/discover', authMiddleware, async (req, res) => {
 
     const search = req.query.search ? `%${req.query.search}%` : '%';
 
-    // Get all public circles that user hasn't joined yet
+    // Get all circles (public and private) that user hasn't joined yet
     const result = await pool.query(`
       SELECT c.id, c.name, c.description, c.type, c.is_private, c.created_by, c.created_at, COALESCE(COUNT(m.id),0) AS member_count
       FROM circles c
       LEFT JOIN memberships m ON m.circle_id = c.id
-      WHERE c.is_private = FALSE 
-        AND (c.name ILIKE $1 OR c.description ILIKE $1)
+      WHERE (c.name ILIKE $1 OR c.description ILIKE $1)
         AND NOT EXISTS (
           SELECT 1 FROM memberships WHERE user_id = $2 AND circle_id = c.id
         )
