@@ -14,9 +14,6 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [circles, setCircles] = useState<Circle[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [showJoinPrivate, setShowJoinPrivate] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,30 +30,6 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
     };
     load();
   }, []);
-
-  const handleJoin = async (circle: Circle) => {
-    if (circle.type === CircleType.PUBLIC) {
-      try {
-        await circleService.joinCircle(user.id, circle.id);
-        navigate(`/circle/${circle.id}`);
-      } catch (err: any) {
-        setError(err.message || 'Failed to join');
-      }
-    } else {
-      setShowJoinPrivate(circle.id);
-      setError('');
-    }
-  };
-
-  const submitJoinPrivate = async () => {
-    if (!showJoinPrivate) return;
-    try {
-      await circleService.joinCircle(user.id, showJoinPrivate, password);
-      navigate(`/circle/${showJoinPrivate}`);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
 
   return (
     <div className="max-w-6xl mx-auto w-full px-6 py-12 space-y-12">
@@ -138,10 +111,10 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
               </div>
               
               <button
-                onClick={() => handleJoin(circle)}
+                onClick={() => navigate(`/circle/${circle.id}`)}
                 className="w-full py-3 bg-black/5 group-hover:bg-[#d4a373] rounded-2xl text-[#5c5852] group-hover:text-white font-semibold transition-all"
               >
-                Join Circle
+                Open Circle
               </button>
             </div>
           ))
@@ -168,40 +141,6 @@ const Dashboard: React.FC<Props> = ({ user, onLogout }) => {
           }}
           userId={user.id}
         />
-      )}
-
-      {showJoinPrivate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/10 backdrop-blur-sm">
-          <div className="max-w-sm w-full glass p-8 rounded-[2.5rem] space-y-6 shadow-2xl">
-            <h2 className="text-2xl font-bold font-outfit text-center text-[#2d1b10]">Private Circle</h2>
-            <p className="text-[#5c5852] text-center text-sm">This circle requires a password to join.</p>
-            
-            <div className="space-y-4">
-              <input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-white/60 border border-white/80 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#d4a373] text-[#432818]"
-              />
-              {error && <p className="text-red-500 text-xs text-center font-medium">{error}</p>}
-              <div className="flex gap-4 pt-2">
-                <button
-                  onClick={() => setShowJoinPrivate(null)}
-                  className="flex-1 py-3 bg-white/40 rounded-xl text-[#5c5852] hover:bg-white/60 font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitJoinPrivate}
-                  className="flex-1 py-3 bg-[#d4a373] rounded-xl text-white font-bold hover:bg-[#a98467] transition-all"
-                >
-                  Join
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
