@@ -17,4 +17,11 @@ CRUD Is done
 and fixed chat style
 next commits
 and next up is auth issue solving and a personalized profile
+
+few more updates
+leave group,delete grp with a note
+edit message 
+private shouldnt be openly seen if searched for it like relevant then it should get suggested
+few publics can be shown no issue with that
 and report issues or flag them and some preventivee measures 
+need to decide polling or web sockets for more scalability and seamless UX 
