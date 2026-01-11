@@ -394,13 +394,6 @@ app.post('/api/circles', authMiddleware, async (req, res) => {
     );
 
     const c = result.rows[0];
-
-    // Add creator as a member automatically
-    await pool.query(
-      `INSERT INTO memberships (user_id, circle_id) VALUES ($1, $2)`,
-      [userRow.id, c.id]
-    );
-
     res.status(201).json({
       circle: {
         id: String(c.id),
@@ -410,7 +403,7 @@ app.post('/api/circles', authMiddleware, async (req, res) => {
         isPrivate: c.is_private,
         createdBy: c.created_by,
         createdAt: new Date(c.created_at).getTime(),
-        memberCount: 1,
+        memberCount: 0,
       }
     });
   } catch (error) {
