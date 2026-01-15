@@ -20,6 +20,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
   const [content, setContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -123,6 +124,16 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     }
   };
 
+  const handleLeaveCircle = async () => {
+    if (!id) return;
+    try {
+      await circleService.leaveCircle(id);
+      navigate('/');
+    } catch (err: any) {
+      alert(err.message || 'Failed to leave circle');
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-screen text-[#8d8a85]">Loading...</div>;
   }
@@ -161,6 +172,16 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
+           </button>
+           <button
+             onClick={() => setShowLeaveModal(true)}
+             title="Leave Group"
+             className="px-4 py-2 bg-[#e07a5f]/10 hover:bg-[#e07a5f]/20 text-[#e07a5f] rounded-xl font-semibold transition-all flex items-center gap-2"
+           >
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+               <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm11 4.414l-4.293 4.293a1 1 0 01-1.414 0L4 7.414 5.414 6l3.293 3.293L13.586 6 15 7.414z" clipRule="evenodd" />
+             </svg>
+             Leave Group
            </button>
         </div>
 
@@ -255,6 +276,40 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
           {replyingTo ? "Mentioning is active" : "General chat is active"}
         </p>
       </div>
+
+      {/* Leave Group Confirmation Modal */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/30 backdrop-blur-sm">
+          <div className="max-w-md w-full glass p-8 rounded-[2.5rem] space-y-6 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto w-12 h-12 bg-[#e07a5f]/10 rounded-full flex items-center justify-center mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#e07a5f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold font-outfit text-[#2d1b10]">Leave Circle?</h2>
+              <p className="text-[#5c5852] mt-2">
+                Are you sure you want to leave <span className="font-bold text-[#d4a373]">{circle.name}</span>? You can rejoin later if you change your mind.
+              </p>
+            </div>
+            
+            <div className="flex gap-4 pt-2">
+              <button
+                onClick={() => setShowLeaveModal(false)}
+                className="flex-1 py-3 bg-white/40 rounded-xl text-[#5c5852] hover:bg-white/60 font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLeaveCircle}
+                className="flex-1 py-3 bg-[#e07a5f] rounded-xl text-white font-bold hover:bg-[#d16a4f] transition-all"
+              >
+                Yes, Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

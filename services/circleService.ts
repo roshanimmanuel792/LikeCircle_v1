@@ -56,6 +56,10 @@ export const circleService = {
     return membership;
   },
 
+  leaveCircle: async (circleId: string): Promise<void> => {
+    await apiClient.delete(`/api/circles/${circleId}/leave`);
+  },
+
   getMessages: async (circleId: string): Promise<Message[]> => {
     const { messages } = await apiClient.get(`/api/circles/${circleId}/messages`);
     return buildMessageTree(messages);

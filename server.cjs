@@ -457,6 +457,32 @@ app.post('/api/circles/:id/join', authMiddleware, async (req, res) => {
   }
 });
 
+// Circles: leave
+app.delete('/api/circles/:id/leave', authMiddleware, async (req, res) => {
+  try {
+    const circleId = Number(req.params.id);
+    if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
+
+    const userRow = await getDbUserBySub(req.user.sub);
+    if (!userRow) return res.status(401).json({ message: 'User not found' });
+
+    // Delete the membership
+    const result = await pool.query(
+      'DELETE FROM memberships WHERE user_id = $1 AND circle_id = $2 RETURNING id',
+      [userRow.id, circleId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Not a member of this circle' });
+    }
+
+    res.json({ message: 'Successfully left the circle' });
+  } catch (error) {
+    console.error('Leave circle failed', error);
+    res.status(500).json({ message: 'Failed to leave circle' });
+  }
+});
+
 // Circles: get membership for current user
 app.get('/api/circles/:id/membership', authMiddleware, async (req, res) => {
   try {
