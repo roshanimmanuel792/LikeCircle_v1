@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { User, Circle, Message, Membership, CircleType } from '../types';
 import { circleService } from '../services/circleService';
+import { socketService } from '../services/socketService';
 import { apiClient } from '../services/apiClient';
 import Post from '../components/Post';
 
@@ -21,6 +22,7 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [activeUsers, setActiveUsers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -53,6 +55,27 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
 
         const msgs = await circleService.getMessages(id);
         setMessages(msgs);
+
+        // Connect to WebSocket
+        const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          socketService.connect(apiUrl, token);
+          socketService.joinCircle(id);
+          
+          // Listen for real-time messages
+          socketService.onNewMessage((newMsg: any) => {
+            setMessages(prev => [...prev, { ...newMsg, replies: [] }]);
+          });
+
+          socketService.onUserJoined((data: any) => {
+            setActiveUsers(data.totalActive);
+          });
+
+          socketService.onUserLeft((data: any) => {
+            setActiveUsers(data.totalActive);
+          });
+        }
       } catch (err: any) {
         console.error(err);
         setError(err.message || 'Failed to load circle');
@@ -61,6 +84,12 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       }
     };
     load();
+
+    return () => {
+      socketService.offNewMessage();
+      socketService.offUserJoined();
+      socketService.offUserLeft();
+    };
   }, [id, user.id, navigate]);
 
   const handleSetReply = (msg: Message) => {
@@ -82,15 +111,12 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     }
 
     try {
-      await circleService.postMessage(
+      // Send via WebSocket
+      socketService.sendMessage(
         circle.id,
-        membership.id,
-        membership.alias,
         finalContent,
         replyingTo?.id
       );
-      const msgs = await circleService.getMessages(circle.id);
-      setMessages(msgs);
     } catch (err: any) {
       setError(err.message || 'Failed to post');
     }
@@ -160,6 +186,12 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
             <div className="flex items-center gap-2">
               <span className="text-[#8d8a85] text-xs font-medium">Joined as</span>
               <span className="text-[#d4a373] text-xs font-bold">{membership.alias}</span>
+              {activeUsers > 0 && (
+                <span className="ml-2 px-2 py-1 bg-[#ccd5ae]/40 rounded-full text-[#5a6a3b] text-xs font-semibold flex items-center gap-1">
+                  <span className="w-2 h-2 bg-[#5a6a3b] rounded-full animate-pulse"></span>
+                  {activeUsers} online
+                </span>
+              )}
             </div>
           </div>
         </div>

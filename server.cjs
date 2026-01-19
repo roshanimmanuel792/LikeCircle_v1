@@ -4,8 +4,11 @@ const cors = require('cors');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
 const { pool } = require('./db.cjs');
+const { Server } = require('socket.io');
+const http = require('http');
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 4000;
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const APP_JWT_SECRET = process.env.APP_JWT_SECRET || 'change-me';
@@ -60,6 +63,102 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// Socket.IO Setup
+const io = new Server(server, {
+  cors: {
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
+    credentials: true,
+  },
+});
+
+// Store active connections: socketId -> { userId, circleId, userAlias }
+const activeUsers = new Map();
+
+// Socket.IO authentication middleware
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error('No token provided'));
+    
+    const decoded = jwt.verify(token, APP_JWT_SECRET);
+    socket.userId = decoded.sub;
+    next();
+  } catch (err) {
+    next(new Error('Invalid token'));
+  }
+});
+
+// Socket.IO event handlers
+io.on('connection', (socket) => {
+  socket.on('join-circle', async (circleId) => {
+    try {
+      socket.join(`circle-${circleId}`);
+      
+      const user = await getDbUserBySub(socket.userId);
+      if (!user) return;
+      
+      activeUsers.set(socket.id, {
+        userId: user.id,
+        circleId,
+        userAlias: user.alias,
+      });
+      
+      io.to(`circle-${circleId}`).emit('user-joined', {
+        alias: user.alias,
+        totalActive: [...activeUsers.values()].filter(u => u.circleId === circleId).length,
+      });
+    } catch (err) {
+      console.error('Join circle failed', err);
+    }
+  });
+
+  socket.on('send-message', async (data) => {
+    try {
+      const { circleId, content, parentId } = data;
+      const user = await getDbUserBySub(socket.userId);
+      if (!user) return;
+
+      const membership = await pool.query(
+        'SELECT id FROM memberships WHERE user_id = $1 AND circle_id = $2',
+        [user.id, circleId]
+      );
+      if (membership.rows.length === 0) return;
+
+      const messageRes = await pool.query(
+        `INSERT INTO messages (circle_id, user_id, membership_id, content, parent_message_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, content, created_at, user_id`,
+        [circleId, user.id, membership.rows[0].id, content, parentId || null]
+      );
+
+      const msg = messageRes.rows[0];
+      io.to(`circle-${circleId}`).emit('new-message', {
+        id: String(msg.id),
+        content: msg.content,
+        alias: user.alias,
+        avatar: user.avatar,
+        userId: user.id,
+        parentId: parentId || null,
+        timestamp: new Date(msg.created_at).getTime(),
+      });
+    } catch (err) {
+      console.error('Send message failed', err);
+      socket.emit('message-error', { error: 'Failed to send message' });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const user = activeUsers.get(socket.id);
+    if (user) {
+      activeUsers.delete(socket.id);
+      io.to(`circle-${user.circleId}`).emit('user-left', {
+        alias: user.userAlias,
+        totalActive: [...activeUsers.values()].filter(u => u.circleId === user.circleId).length,
+      });
+    }
+  });
+});
 
 // Helpers
 const getDbUserBySub = async (googleSub) => {
@@ -622,6 +721,7 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Auth verifier running on http://localhost:${port}`);
+  console.log(`WebSocket server ready for real-time messaging`);
 });
