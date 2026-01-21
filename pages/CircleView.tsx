@@ -68,6 +68,52 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const messageIdsRef = useRef<Set<string>>(new Set());
+
+  // Normalize message from API response
+  const normalizeMessage = (msg: any, circleId: string): Message => ({
+    id: String(msg.id),
+    circleId: String(msg.circleId || circleId),
+    membershipId: String(msg.membershipId || ''),
+    alias: msg.alias,
+    avatar: msg.avatar,
+    userId: msg.userId ? String(msg.userId) : undefined,
+    content: msg.content,
+    parentId: msg.parentId || undefined,
+    timestamp: Number(msg.timestamp) || Date.now(),
+    isEdited: Boolean(msg.isEdited),
+    editedAt: msg.editedAt ? Number(msg.editedAt) : undefined,
+    replies: [],
+  });
+
+  // Polling function: fetch messages every 3 seconds
+  const pollMessages = async (circleId: string) => {
+    try {
+      const freshMessages = await circleService.getMessages(circleId);
+      const flatFresh = flattenMessages(freshMessages);
+      
+      // Find new messages not yet seen
+      const newMessages = flatFresh.filter(m => !messageIdsRef.current.has(m.id));
+      
+      // Add them to the tree
+      if (newMessages.length > 0) {
+        newMessages.forEach(msg => {
+          messageIdsRef.current.add(msg.id);
+        });
+        
+        setMessages(prev => {
+          let updated = prev;
+          newMessages.forEach(msg => {
+            updated = upsertMessage(updated, msg);
+          });
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.error('Polling failed', err);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -95,6 +141,14 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
 
         const msgs = await circleService.getMessages(id);
         setMessages(msgs);
+        
+        // Track message IDs for deduplication
+        const flatMsgs = flattenMessages(msgs);
+        messageIdsRef.current = new Set(flatMsgs.map(m => m.id));
+
+        // Start polling for cross-device sync
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = setInterval(() => pollMessages(id), 3000);
 
         // Connect to WebSocket
         const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -105,38 +159,15 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
           
           // Listen for real-time messages
           socketService.onNewMessage((newMsg: any) => {
-            const normalized: Message = {
-              id: String(newMsg.id),
-              circleId: String(newMsg.circleId || id),
-              membershipId: String(newMsg.membershipId || ''),
-              alias: newMsg.alias,
-              avatar: newMsg.avatar,
-              userId: newMsg.userId ? String(newMsg.userId) : undefined,
-              content: newMsg.content,
-              parentId: newMsg.parentId || undefined,
-              timestamp: Number(newMsg.timestamp) || Date.now(),
-              isEdited: Boolean(newMsg.isEdited),
-              editedAt: newMsg.editedAt ? Number(newMsg.editedAt) : undefined,
-              replies: [],
-            };
+            const normalized = normalizeMessage(newMsg, id);
+            messageIdsRef.current.add(normalized.id);
             setMessages((prev) => upsertMessage(prev, normalized));
           });
 
           socketService.onMessageUpdated((updatedMsg: any) => {
-            const normalized: Message = {
-              id: String(updatedMsg.id),
-              circleId: String(updatedMsg.circleId || id),
-              membershipId: String(updatedMsg.membershipId || ''),
-              alias: updatedMsg.alias,
-              avatar: updatedMsg.avatar,
-              userId: updatedMsg.userId ? String(updatedMsg.userId) : undefined,
-              content: updatedMsg.content,
-              parentId: updatedMsg.parentId || undefined,
-              timestamp: Number(updatedMsg.timestamp) || Date.now(),
-              isEdited: true,
-              editedAt: updatedMsg.editedAt ? Number(updatedMsg.editedAt) : Date.now(),
-              replies: [],
-            };
+            const normalized = normalizeMessage(updatedMsg, id);
+            normalized.isEdited = true;
+            messageIdsRef.current.add(normalized.id);
             setMessages((prev) => upsertMessage(prev, normalized));
           });
 
@@ -162,6 +193,9 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     load();
 
     return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
       socketService.offNewMessage();
       socketService.offMessageUpdated();
       socketService.offUserJoined();
