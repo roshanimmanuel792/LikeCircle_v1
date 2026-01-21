@@ -57,6 +57,10 @@ export const socketService = {
     socket?.on('user-left', callback);
   },
 
+  onMessageUpdated: (callback: (data: any) => void) => {
+    socket?.on('message-updated', callback);
+  },
+
   onMessageError: (callback: (error: any) => void) => {
     socket?.on('message-error', callback);
   },
@@ -71,6 +75,10 @@ export const socketService = {
 
   offUserLeft: () => {
     socket?.off('user-left');
+  },
+
+  offMessageUpdated: () => {
+    socket?.off('message-updated');
   },
 
   offMessageError: () => {

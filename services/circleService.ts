@@ -70,6 +70,11 @@ export const circleService = {
     return { ...message, membershipId, alias, replies: [] };
   },
 
+  editMessage: async (messageId: string, content: string): Promise<Message> => {
+    const { message } = await apiClient.put(`/api/messages/${messageId}`, { content });
+    return { ...message, replies: [] };
+  },
+
   reportMessage: async (messageId: string): Promise<void> => {
     await apiClient.post(`/api/messages/${messageId}/report`);
   },

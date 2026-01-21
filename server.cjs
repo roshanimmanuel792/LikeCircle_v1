@@ -15,6 +15,7 @@ const APP_JWT_SECRET = process.env.APP_JWT_SECRET || 'change-me';
 const APP_REFRESH_SECRET = process.env.APP_REFRESH_SECRET || 'change-me-refresh';
 const ACCESS_TTL = process.env.ACCESS_TTL || '15m';
 const REFRESH_TTL = process.env.REFRESH_TTL || '7d';
+const EDIT_WINDOW_MINUTES = Number(process.env.EDIT_WINDOW_MINUTES || 10);
 
 const ADJECTIVES = ['Calm','Brave','Swift','Quiet','Bright','Clever','Nimble','Kind','Bold','Sunny'];
 const NOUNS = ['Lion','Fox','Owl','Wolf','Hawk','Otter','Panda','Falcon','Dolphin','Badger'];
@@ -126,21 +127,25 @@ io.on('connection', (socket) => {
       if (membership.rows.length === 0) return;
 
       const messageRes = await pool.query(
-        `INSERT INTO messages (circle_id, user_id, membership_id, content, parent_message_id)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, content, created_at, user_id`,
-        [circleId, user.id, membership.rows[0].id, content, parentId || null]
+        `INSERT INTO messages (circle_id, user_id, membership_id, alias, content, parent_message_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, content, created_at, updated_at, user_id, membership_id, alias, circle_id, parent_message_id`,
+        [circleId, user.id, membership.rows[0].id, user.alias, content, parentId || null]
       );
 
       const msg = messageRes.rows[0];
       io.to(`circle-${circleId}`).emit('new-message', {
         id: String(msg.id),
+        circleId: String(msg.circle_id),
+        membershipId: String(msg.membership_id),
         content: msg.content,
-        alias: user.alias,
+        alias: msg.alias || user.alias,
         avatar: user.avatar,
-        userId: user.id,
-        parentId: parentId || null,
+        userId: String(msg.user_id),
+        parentId: msg.parent_message_id ? String(msg.parent_message_id) : undefined,
         timestamp: new Date(msg.created_at).getTime(),
+        isEdited: false,
+        editedAt: new Date(msg.updated_at).getTime(),
       });
     } catch (err) {
       console.error('Send message failed', err);
@@ -609,7 +614,7 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
     if (Number.isNaN(circleId)) return res.status(400).json({ message: 'Invalid circle id' });
 
     const result = await pool.query(
-      `SELECT m.id, m.circle_id, m.membership_id, m.alias, m.content, m.parent_message_id, m.created_at, m.user_id, u.avatar
+      `SELECT m.id, m.circle_id, m.membership_id, COALESCE(m.alias, u.alias) AS alias, m.content, m.parent_message_id, m.created_at, m.updated_at, m.user_id, u.avatar
        FROM messages m
        LEFT JOIN users u ON u.id = m.user_id
        WHERE m.circle_id = $1 AND m.is_deleted = FALSE
@@ -627,6 +632,8 @@ app.get('/api/circles/:id/messages', authMiddleware, async (req, res) => {
       content: m.content,
       parentId: m.parent_message_id ? String(m.parent_message_id) : undefined,
       timestamp: new Date(m.created_at).getTime(),
+      isEdited: new Date(m.updated_at).getTime() > new Date(m.created_at).getTime(),
+      editedAt: new Date(m.updated_at).getTime(),
     }));
 
     res.json({ messages });
@@ -654,22 +661,29 @@ app.post('/api/circles/:id/messages', authMiddleware, async (req, res) => {
     const insert = await pool.query(
       `INSERT INTO messages (circle_id, membership_id, user_id, alias, content, parent_message_id)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, created_at`,
+       RETURNING id, created_at, updated_at`,
       [circleId, membership.id, userRow.id, membership.alias, content, parentId ? Number(parentId) : null]
     );
 
     const m = insert.rows[0];
-    res.status(201).json({
-      message: {
-        id: String(m.id),
-        circleId: String(circleId),
-        membershipId: String(membership.id),
-        alias: membership.alias,
-        content,
-        parentId: parentId ? String(parentId) : undefined,
-        timestamp: new Date(m.created_at).getTime(),
-      }
-    });
+    const payload = {
+      id: String(m.id),
+      circleId: String(circleId),
+      membershipId: String(membership.id),
+      alias: membership.alias,
+      avatar: userRow.avatar,
+      userId: String(userRow.id),
+      content,
+      parentId: parentId ? String(parentId) : undefined,
+      timestamp: new Date(m.created_at).getTime(),
+      isEdited: false,
+      editedAt: new Date(m.updated_at).getTime(),
+    };
+
+    // Broadcast to listeners in this circle
+    io.to(`circle-${circleId}`).emit('new-message', payload);
+
+    res.status(201).json({ message: payload });
   } catch (error) {
     console.error('Post message failed', error);
     res.status(500).json({ message: 'Failed to post message' });
@@ -701,6 +715,66 @@ app.delete('/api/messages/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Delete message failed', error);
     res.status(500).json({ message: 'Failed to delete message' });
+  }
+});
+
+// Messages: edit (time-limited)
+app.put('/api/messages/:id', authMiddleware, async (req, res) => {
+  try {
+    const msgId = Number(req.params.id);
+    const { content } = req.body;
+    if (Number.isNaN(msgId)) return res.status(400).json({ message: 'Invalid message id' });
+    if (!content || !content.trim()) return res.status(400).json({ message: 'Content is required' });
+
+    const dbUser = await getDbUserBySub(req.user.sub);
+    if (!dbUser) return res.status(401).json({ message: 'User not found' });
+
+    const msgRow = await pool.query(
+      'SELECT id, circle_id, user_id, membership_id, alias, content, parent_message_id, created_at, updated_at FROM messages WHERE id = $1 AND is_deleted = FALSE',
+      [msgId]
+    );
+    if (msgRow.rows.length === 0) return res.status(404).json({ message: 'Message not found' });
+
+    const message = msgRow.rows[0];
+    if (message.user_id !== dbUser.id) return res.status(403).json({ message: 'You can only edit your own messages' });
+
+    const createdAt = new Date(message.created_at).getTime();
+    const now = Date.now();
+    const windowMs = EDIT_WINDOW_MINUTES * 60 * 1000;
+    if (now - createdAt > windowMs) {
+      return res.status(403).json({ message: `Editing window expired (${EDIT_WINDOW_MINUTES} minutes)` });
+    }
+
+    const updated = await pool.query(
+      `UPDATE messages
+       SET content = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING id, circle_id, membership_id, alias, user_id, content, parent_message_id, created_at, updated_at`,
+      [content, msgId]
+    );
+
+    const row = updated.rows[0];
+    const payload = {
+      id: String(row.id),
+      circleId: String(row.circle_id),
+      membershipId: row.membership_id ? String(row.membership_id) : '',
+      alias: row.alias || dbUser.alias,
+      avatar: dbUser.avatar,
+      userId: row.user_id ? String(row.user_id) : undefined,
+      content: row.content,
+      parentId: row.parent_message_id ? String(row.parent_message_id) : undefined,
+      timestamp: new Date(row.created_at).getTime(),
+      isEdited: true,
+      editedAt: new Date(row.updated_at).getTime(),
+    };
+
+    // Notify circle listeners
+    io.to(`circle-${row.circle_id}`).emit('message-updated', payload);
+
+    res.json({ message: payload });
+  } catch (error) {
+    console.error('Edit message failed', error);
+    res.status(500).json({ message: 'Failed to edit message' });
   }
 });
 

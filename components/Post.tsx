@@ -8,17 +8,25 @@ interface Props {
   onReport?: (messageId: string) => Promise<void> | void;
   onDelete?: (messageId: string) => Promise<void> | void;
   currentUserId?: string; // Database user ID for ownership check
+  onEdit?: (messageId: string, content: string) => Promise<void> | void;
+  editWindowMinutes?: number;
   isReply?: boolean;
   depth?: number;
 }
 
-const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUserId, isReply = false, depth = 0 }) => {
+const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, onEdit, currentUserId, editWindowMinutes = 0, isReply = false, depth = 0 }) => {
   const [reported, setReported] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
   const date = new Date(message.timestamp);
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   
   const isOwner = currentUserId && message.userId && currentUserId === message.userId;
+  const timeRemainingMs = editWindowMinutes > 0 ? (editWindowMinutes * 60 * 1000) - (Date.now() - message.timestamp) : 0;
+  const canEdit = Boolean(onEdit && isOwner && timeRemainingMs > 0);
 
   const handleReport = async () => {
     if (!onReport) return;
@@ -38,6 +46,20 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUs
         console.error('Failed to delete message', err);
         alert('Failed to delete message');
       }
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!onEdit || !draft.trim()) return;
+    try {
+      setSaving(true);
+      setEditError('');
+      await onEdit(message.id, draft.trim());
+      setEditing(false);
+    } catch (err: any) {
+      setEditError(err?.message || 'Failed to edit message');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -84,7 +106,10 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUs
               </div>
               <div className="flex flex-col">
                 <span className="text-[#d4a373] font-black text-sm tracking-wide">@{message.alias}</span>
-                <span className="text-[#8d8a85] text-[10px] uppercase font-black tracking-tighter opacity-70">{timeStr}</span>
+                <span className="text-[#8d8a85] text-[10px] uppercase font-black tracking-tighter opacity-70 flex items-center gap-1">
+                  {timeStr}
+                  {message.isEdited && <span className="text-[9px] text-[#a98467] font-bold">(edited)</span>}
+                </span>
               </div>
             </div>
             
@@ -95,6 +120,14 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUs
               >
                 Reply Mention
               </button>
+              {canEdit && (
+                <button
+                  onClick={() => { setEditing(true); setDraft(message.content); }}
+                  className="text-[10px] text-[#5c5852] hover:text-[#2d1b10] px-4 py-1.5 bg-white/60 hover:bg-white/90 rounded-full transition-all border border-black/5 font-black uppercase tracking-widest shadow-sm"
+                >
+                  Edit
+                </button>
+              )}
               {isOwner && (
                 <button 
                   onClick={handleDelete}
@@ -119,9 +152,42 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUs
           </div>
           
           <div className="pl-1">
-            <p className="text-[#432818] leading-relaxed text-[16px] whitespace-pre-wrap font-medium">
-              {message.content}
-            </p>
+            {editing ? (
+              <div className="space-y-2">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-[#d4a373]/40 bg-white/70 px-3 py-2 text-sm text-[#432818] focus:outline-none focus:ring-2 focus:ring-[#d4a373]/60"
+                  placeholder="Update your message"
+                />
+                {editError && <p className="text-xs text-red-500">{editError}</p>}
+                <div className="flex items-center gap-2 text-[10px] text-[#8d8a85] uppercase font-black">
+                  <span>Editing allowed for {editWindowMinutes} mins after posting</span>
+                  <span className="w-1 h-1 rounded-full bg-[#d4a373]"></span>
+                  <span>{Math.max(0, Math.floor(timeRemainingMs / 60000))}m left</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleEditSave}
+                    disabled={saving || !draft.trim()}
+                    className="px-4 py-2 rounded-xl bg-[#d4a373] text-white text-xs font-bold hover:bg-[#c28c60] disabled:opacity-60"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => { setEditing(false); setEditError(''); setDraft(message.content); }}
+                    className="px-4 py-2 rounded-xl bg-white/70 text-[#5c5852] text-xs font-bold hover:bg-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[#432818] leading-relaxed text-[16px] whitespace-pre-wrap font-medium">
+                {message.content}
+              </p>
+            )}
           </div>
         </div>
 
@@ -135,6 +201,8 @@ const Post: React.FC<Props> = ({ message, onReply, onReport, onDelete, currentUs
                 onReply={onReply} 
                 onReport={onReport}
                 onDelete={onDelete}
+                onEdit={onEdit}
+                editWindowMinutes={editWindowMinutes}
                 currentUserId={currentUserId}
                 isReply 
                 depth={depth + 1} 

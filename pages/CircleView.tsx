@@ -7,6 +7,46 @@ import { socketService } from '../services/socketService';
 import { apiClient } from '../services/apiClient';
 import Post from '../components/Post';
 
+const EDIT_WINDOW_MINUTES = 10;
+
+const flattenMessages = (nodes: Message[]): Message[] => {
+  const flat: Message[] = [];
+  const walk = (items: Message[]) => {
+    items.forEach((item) => {
+      const { replies, ...rest } = item;
+      flat.push({ ...rest, replies: [] });
+      if (replies && replies.length) {
+        walk(replies);
+      }
+    });
+  };
+  walk(nodes);
+  return flat;
+};
+
+const buildMessageTree = (flat: Message[]): Message[] => {
+  const map = new Map<string, Message>();
+  flat.forEach((m) => map.set(m.id, { ...m, replies: [] }));
+
+  const roots: Message[] = [];
+  flat.forEach((m) => {
+    const node = map.get(m.id)!;
+    if (m.parentId) {
+      const parent = map.get(m.parentId);
+      parent ? parent.replies?.push(node) : roots.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots.sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const upsertMessage = (tree: Message[], incoming: Message): Message[] => {
+  const flat = flattenMessages(tree).filter((m) => m.id !== incoming.id);
+  flat.push({ ...incoming, replies: [] });
+  return buildMessageTree(flat);
+};
+
 interface Props {
   user: User;
   onLogout: () => void;
@@ -65,7 +105,39 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
           
           // Listen for real-time messages
           socketService.onNewMessage((newMsg: any) => {
-            setMessages(prev => [...prev, { ...newMsg, replies: [] }]);
+            const normalized: Message = {
+              id: String(newMsg.id),
+              circleId: String(newMsg.circleId || id),
+              membershipId: String(newMsg.membershipId || ''),
+              alias: newMsg.alias,
+              avatar: newMsg.avatar,
+              userId: newMsg.userId ? String(newMsg.userId) : undefined,
+              content: newMsg.content,
+              parentId: newMsg.parentId || undefined,
+              timestamp: Number(newMsg.timestamp) || Date.now(),
+              isEdited: Boolean(newMsg.isEdited),
+              editedAt: newMsg.editedAt ? Number(newMsg.editedAt) : undefined,
+              replies: [],
+            };
+            setMessages((prev) => upsertMessage(prev, normalized));
+          });
+
+          socketService.onMessageUpdated((updatedMsg: any) => {
+            const normalized: Message = {
+              id: String(updatedMsg.id),
+              circleId: String(updatedMsg.circleId || id),
+              membershipId: String(updatedMsg.membershipId || ''),
+              alias: updatedMsg.alias,
+              avatar: updatedMsg.avatar,
+              userId: updatedMsg.userId ? String(updatedMsg.userId) : undefined,
+              content: updatedMsg.content,
+              parentId: updatedMsg.parentId || undefined,
+              timestamp: Number(updatedMsg.timestamp) || Date.now(),
+              isEdited: true,
+              editedAt: updatedMsg.editedAt ? Number(updatedMsg.editedAt) : Date.now(),
+              replies: [],
+            };
+            setMessages((prev) => upsertMessage(prev, normalized));
           });
 
           socketService.onUserJoined((data: any) => {
@@ -74,6 +146,10 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
 
           socketService.onUserLeft((data: any) => {
             setActiveUsers(data.totalActive);
+          });
+
+          socketService.onMessageError((payload: any) => {
+            setError(payload?.error || 'Failed to send message');
           });
         }
       } catch (err: any) {
@@ -87,8 +163,10 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
 
     return () => {
       socketService.offNewMessage();
+      socketService.offMessageUpdated();
       socketService.offUserJoined();
       socketService.offUserLeft();
+      socketService.offMessageError();
     };
   }, [id, user.id, navigate]);
 
@@ -111,17 +189,13 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     }
 
     try {
-      // Send via WebSocket
-      socketService.sendMessage(
-        circle.id,
-        finalContent,
-        replyingTo?.id
-      );
+      const newMsg = await circleService.postMessage(circle.id, membership.id, membership.alias, finalContent, replyingTo?.id);
+      setMessages((prev) => upsertMessage(prev, newMsg));
+      setContent('');
+      setReplyingTo(null);
     } catch (err: any) {
       setError(err.message || 'Failed to post');
     }
-    setContent('');
-    setReplyingTo(null);
     
     // Smooth scroll to bottom for top-level posts, or just stay for nested?
     // Usually better to scroll slightly to show the new message
@@ -144,10 +218,15 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
     try {
       await circleService.deleteMessage(messageId);
       // Remove deleted message from state
-      setMessages(messages.filter(m => m.id !== messageId));
+      setMessages((prev) => buildMessageTree(flattenMessages(prev).filter(m => m.id !== messageId)));
     } catch (err: any) {
       alert(err.message || 'Failed to delete message');
     }
+  };
+
+  const handleEdit = async (messageId: string, updatedContent: string) => {
+    const edited = await circleService.editMessage(messageId, updatedContent);
+    setMessages((prev) => upsertMessage(prev, edited));
   };
 
   const handleLeaveCircle = async () => {
@@ -242,7 +321,16 @@ const CircleView: React.FC<Props> = ({ user, onLogout }) => {
       <div className="flex-1 overflow-y-auto px-2 py-4 space-y-8 scroll-smooth" ref={scrollRef}>
         {messages.length > 0 ? (
           messages.map(msg => (
-            <Post key={msg.id} message={msg} onReply={handleSetReply} onReport={handleReport} onDelete={handleDelete} currentUserId={currentUserId || undefined} />
+            <Post
+              key={msg.id}
+              message={msg}
+              onReply={handleSetReply}
+              onReport={handleReport}
+              onDelete={handleDelete}
+              onEdit={handleEdit}
+              currentUserId={currentUserId || undefined}
+              editWindowMinutes={EDIT_WINDOW_MINUTES}
+            />
           ))
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center p-10 opacity-60">

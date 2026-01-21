@@ -40,6 +40,8 @@ export interface Message {
   content: string;
   parentId?: string; // For nesting
   timestamp: number;
+  isEdited?: boolean;
+  editedAt?: number;
   replies?: Message[];
 }
 
