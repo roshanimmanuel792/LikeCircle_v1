@@ -162,34 +162,6 @@ memberships (
 )
 ```
 
-### Messages Table
-```sql
-messages (
-  id SERIAL PRIMARY KEY,
-  circle_id INTEGER REFERENCES circles(id),
-  membership_id INTEGER REFERENCES memberships(id),
-  user_id INTEGER REFERENCES users(id),
-  alias VARCHAR(255),
-  content TEXT,
-  parent_message_id INTEGER,      -- For threaded replies
-  is_reported BOOLEAN,
-  is_deleted BOOLEAN,
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
-)
-```
-
-### Refresh Tokens Table
-```sql
-refresh_tokens (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  token TEXT UNIQUE,
-  expires_at TIMESTAMP,
-  revoked_at TIMESTAMP,
-  created_at TIMESTAMP
-)
-```
 
 ## 🔐 Security Features
 
