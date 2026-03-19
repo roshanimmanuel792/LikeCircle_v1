@@ -1,12 +1,19 @@
 const { Pool } = require('pg');
 
-const pool = new Pool({
+const poolConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'likecircle',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-});
+};
+
+// Add SSL for Supabase (required)
+if (process.env.DB_HOST && process.env.DB_HOST.includes('supabase')) {
+  poolConfig.ssl = { rejectUnauthorized: false };
+}
+
+const pool = new Pool(poolConfig);
 
 // Initialize database schema
 const initDb = async () => {
