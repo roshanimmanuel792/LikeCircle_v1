@@ -33,7 +33,7 @@ export const authService = {
       return user;
     } catch (error) {
       console.error('Error processing Google token:', error);
-      throw new Error('Failed to authenticate with Google');
+      throw new Error('checking');
     }
   },
 
