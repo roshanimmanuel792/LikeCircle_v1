@@ -331,10 +331,6 @@ npm start
 
 ## 📈 Scalability Considerations
 
-### Current Architecture
-- **Free tier**: Suitable for personal projects, small communities
-- **Supabase limits**: 500MB storage, connection pooling included
-
 ### Future Enhancements
 - **Redis adapter** for Socket.IO (multi-instance support)
 - **CDN integration** for static assets
